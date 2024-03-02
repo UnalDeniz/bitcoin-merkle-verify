@@ -57,7 +57,18 @@ struct Transaction {
     vout: Vec<Vout>,
 }
 
-fn hash_data(data: String, mut hasher: Sha256) -> String {
+fn hash_string(data: String, mut hasher: Sha256) -> String {
+    // Update the hasher with the data
+    hasher.update(data);
+
+    // Finalize the hasher and retrieve the hash
+    let result = hasher.finalize();
+
+    // Convert the hash into a byte array and return it
+    format!("{:x}", result)
+}
+
+fn hash_binary(data: Vec<u8>, mut hasher: Sha256) -> String {
     // Update the hasher with the data
     hasher.update(data);
 
@@ -69,7 +80,12 @@ fn hash_data(data: String, mut hasher: Sha256) -> String {
 }
 
 fn merkle_proof(root: String, txid_list: Vec<String>) -> bool {
-    let mut hashes = txid_list.clone();
+
+    let mut hashes: Vec<String> = Vec::new();
+
+    for hash in txid_list {
+        hashes.push(convert_endianness(&hash.clone()));
+    }
 
     while hashes.len() > 1 {
         if hashes.len() % 2 != 0 {
@@ -81,17 +97,28 @@ fn merkle_proof(root: String, txid_list: Vec<String>) -> bool {
         for i in 0..hashes.len() / 2 {
             let mut hasher = Sha256::new();
 
-            let data = format!("{}{}", hashes[i * 2], hashes[i * 2 + 1]);
+            let mut first = hex::decode(hashes[i * 2].clone()).unwrap();
 
-            let hash = hash_data(data, hasher);
+            let second = hex::decode(hashes[i * 2 + 1].clone()).unwrap();
 
-            new_hashes.push(hash);
+            first.extend(second);
+
+            let hash = hash_binary(first, hasher.clone());
+
+            let second_hash = hash_binary(hex::decode(hash).unwrap(), hasher);
+
+            new_hashes.push(second_hash);
         }
 
         hashes = new_hashes;
     }
 
-    hashes[0] == root
+    let calculated = convert_endianness(&hashes[0]);
+
+    println!("Merkle root: {}",  calculated);
+    println!("Root: {}", root);
+
+    return calculated == root;
 }
 
 fn find_wtxid_root (transaction: &Transaction) -> Result<String, &'static str> {
@@ -102,6 +129,19 @@ fn find_wtxid_root (transaction: &Transaction) -> Result<String, &'static str> {
     }
     Err("Could not find wtxid root in transaction")
 }
+
+fn convert_endianness(hex_string: &str) -> String {
+    // Convert hexadecimal string to bytes
+    let bytes_data = hex::decode(hex_string).expect("Invalid hexadecimal string");
+
+    // Reverse the byte order for little endian
+    let reversed_bytes: Vec<u8> = bytes_data.iter().rev().cloned().collect();
+
+    // Convert reversed bytes back to hexadecimal string
+    let reversed_hex_string = hex::encode(reversed_bytes);
+    reversed_hex_string
+}
+
 
 fn main() {
 
